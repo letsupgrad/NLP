@@ -1,25 +1,28 @@
 import streamlit as st
 import pandas as pd
+import nltk
 import pdfplumber
-import docx
+from docx import Document
 import requests
 from bs4 import BeautifulSoup
-import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
-from nltk.corpus import stopwords
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import io
-from transformers import pipeline
 import spacy
+from transformers import pipeline
 from langdetect import detect
 from googletrans import Translator
 import whisper
 import tempfile
+
+# CRITICAL gensim import - no change here
 from gensim import corpora, models
 import pyLDAvis.gensim_models as gensimvis
 import pyLDAvis
+
 import streamlit.components.v1 as components
+
+# rest of your code ...
+
 
 # Initialize downloads for nltk if needed
 nltk.download("punkt")
