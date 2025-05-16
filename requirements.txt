@@ -1,4 +1,6 @@
 streamlit
+gensim
+scipy<1.11.0
 pandas
 nltk
 pdfplumber
@@ -15,4 +17,4 @@ googletrans==4.0.0-rc1
 whisper
 gensim
 pyLDAvis
-scipy<1.11.0
+
