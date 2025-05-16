@@ -1,6 +1,4 @@
 streamlit
-gensim
-scipy<1.11.0
 pandas
 nltk
 pdfplumber
@@ -11,10 +9,8 @@ wordcloud
 matplotlib
 spacy
 transformers
-sentencepiece
 langdetect
 googletrans==4.0.0-rc1
-whisper
+openai-whisper
 gensim
 pyLDAvis
-
