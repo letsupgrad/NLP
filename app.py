@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import nltk
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.corpus import stopwords
 import pdfplumber
-from docx import Document
+import docx
 import requests
 from bs4 import BeautifulSoup
 from wordcloud import WordCloud
@@ -21,9 +23,6 @@ import pyLDAvis
 
 import streamlit.components.v1 as components
 
-# rest of your code ...
-
-
 # Initialize downloads for nltk if needed
 nltk.download("punkt")
 nltk.download("stopwords")
@@ -31,14 +30,30 @@ nltk.download("stopwords")
 # --- Load models with caching ---
 @st.cache_resource
 def load_models():
-    summarizer = pipeline("summarization", model="t5-small", tokenizer="t5-small")
-    nlp = spacy.load("en_core_web_sm")
-    whisper_model = whisper.load_model("base")
-    return summarizer, nlp, whisper_model
+    try:
+        summarizer = pipeline("summarization", model="t5-small", tokenizer="t5-small")
+        # Download spacy model if not present
+        try:
+            nlp = spacy.load("en_core_web_sm")
+        except:
+            st.info("Downloading Spacy model...")
+            spacy.cli.download("en_core_web_sm")
+            nlp = spacy.load("en_core_web_sm")
+        
+        whisper_model = whisper.load_model("base")
+        return summarizer, nlp, whisper_model
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
+        # Return placeholders to prevent app from crashing
+        return None, None, None
 
 summarizer, ner_model, whisper_model = load_models()
 
-translator = Translator()
+try:
+    translator = Translator()
+except:
+    st.warning("Translation service unavailable")
+    translator = None
 
 # --- Utility functions ---
 def extract_text_from_file(file, filetype):
@@ -100,39 +115,51 @@ def plot_wordcloud(freq_df):
 
 def translate_to_english(text):
     try:
-        detected_lang = detect(text)
-        if detected_lang != "en":
-            translated = translator.translate(text, src=detected_lang, dest="en")
-            return translated.text, detected_lang
+        if translator:
+            detected_lang = detect(text)
+            if detected_lang != "en":
+                translated = translator.translate(text, src=detected_lang, dest="en")
+                return translated.text, detected_lang
         return text, "en"
     except:
         return text, "en"
 
 def translate_back(text, lang):
     try:
-        if lang != "en":
+        if translator and lang != "en":
             return translator.translate(text, src="en", dest=lang).text
         return text
     except:
         return text
 
 def transcribe_audio(audio_file):
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp.write(audio_file.read())
-        result = whisper_model.transcribe(tmp.name)
-        return result["text"]
+    if whisper_model:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as tmp:
+            tmp.write(audio_file.read())
+            tmp_path = tmp.name
+        
+        try:
+            result = whisper_model.transcribe(tmp_path)
+            return result["text"]
+        except Exception as e:
+            return f"Error transcribing audio: {e}"
+    else:
+        return "Whisper model not available"
 
 def show_lda(text):
-    words = [word for word in word_tokenize(text.lower()) if word.isalnum() and word not in stopwords.words("english")]
-    dictionary = corpora.Dictionary([words])
-    corpus = [dictionary.doc2bow(words)]
-    lda_model = models.LdaModel(corpus, num_topics=2, id2word=dictionary, passes=10)
-    vis = gensimvis.prepare(lda_model, corpus, dictionary)
-    html = pyLDAvis.prepared_data_to_html(vis)
-    components.html(html, width=1000, height=600)
+    try:
+        words = [word for word in word_tokenize(text.lower()) if word.isalnum() and word not in stopwords.words("english")]
+        dictionary = corpora.Dictionary([words])
+        corpus = [dictionary.doc2bow(words)]
+        lda_model = models.LdaModel(corpus, num_topics=2, id2word=dictionary, passes=10)
+        vis = gensimvis.prepare(lda_model, corpus, dictionary)
+        html = pyLDAvis.prepared_data_to_html(vis)
+        components.html(html, width=1000, height=600)
+    except Exception as e:
+        st.error(f"Error generating LDA visualization: {e}")
 
 # --- Streamlit UI ---
-st.set_page_config("Ultimate NLP Summarizer", layout="wide")
+st.set_page_config(page_title="Ultimate NLP Summarizer", layout="wide")
 st.title("🧠 Ultimate AI Text Summarizer & Keyword Extractor")
 
 # Sidebar
@@ -179,10 +206,14 @@ if text:
     # Summarize
     if st.button("🔍 Generate Summary"):
         with st.spinner("Summarizing..."):
-            if summarization_type == "Abstractive (T5)":
+            if summarizer and summarization_type == "Abstractive (T5)":
                 short_text = text_en[:1000]
-                result = summarizer(short_text, max_length=150, min_length=40, do_sample=False)
-                summary = result[0]["summary_text"]
+                try:
+                    result = summarizer(short_text, max_length=150, min_length=40, do_sample=False)
+                    summary = result[0]["summary_text"]
+                except Exception as e:
+                    st.error(f"Error with abstractive summarization: {e}")
+                    summary = summarize_text(text_en, num_sentences)
             else:
                 summary = summarize_text(text_en, num_sentences)
 
@@ -209,14 +240,18 @@ if text:
             plot_wordcloud(keywords)
 
         # Named Entities
-        st.subheader("🧬 Named Entities")
-        doc = ner_model(text_en[:2000])
-        entities = [(ent.text, ent.label_) for ent in doc.ents]
-        if entities:
-            df_entities = pd.DataFrame(entities, columns=["Entity", "Type"])
-            st.table(df_entities)
-        else:
-            st.info("No named entities found.")
+        if ner_model:
+            st.subheader("🧬 Named Entities")
+            try:
+                doc = ner_model(text_en[:2000])
+                entities = [(ent.text, ent.label_) for ent in doc.ents]
+                if entities:
+                    df_entities = pd.DataFrame(entities, columns=["Entity", "Type"])
+                    st.table(df_entities)
+                else:
+                    st.info("No named entities found.")
+            except Exception as e:
+                st.error(f"Error extracting entities: {e}")
 
         # Topic modeling
         if show_topics:
